@@ -77,12 +77,6 @@ func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
 	t := &tcp{}
 	rt := r.vu.Runtime()
 
-	// TODO you can mutate url in this function and there is no need to return the value
-	err := t.parseURL(c.Argument(0))
-	if err != nil {
-		common.Throw(rt, err)
-	}
-
 	t = &tcp{
 		vu: r.vu,
 
@@ -95,6 +89,18 @@ func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
 		eventListeners: newEventListeners(),
 	}
 	defineTCP(rt, t)
+
+	// In this way the difference between having arguments in new TCP object and socket.open is doing it async or sync
+	if len(c.Arguments) > 0 {
+		err := t.parseURL(c.Argument(0))
+		if err != nil {
+			common.Throw(rt, err)
+		}
+
+		if err := t.open(*t.url, tcpParams{}); err != nil {
+			common.Throw(rt, err)
+		}
+	}
 
 	return t.obj
 }
