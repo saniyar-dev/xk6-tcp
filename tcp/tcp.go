@@ -10,6 +10,16 @@ import (
 	"go.k6.io/k6/js/modules"
 )
 
+// ExportedAPI interface is an interface which all exported api needs to implement this interface
+type ExportedAPI interface {
+	init(sobek.ConstructorCall) *sobek.Object
+}
+
+// Thing interface is an interface which all the thing needs to implement this.
+type Thing interface {
+	parseURL(sobek.Value) error
+}
+
 // RootModule for TCPAPI extension
 type RootModule struct{}
 
@@ -28,14 +38,17 @@ type TCPAPI struct {
 	// blobConstructor sobek.Value
 }
 
-var _ modules.Instance = &TCPAPI{}
+var (
+	_ modules.Instance = &TCPAPI{}
+	_ ExportedAPI      = &TCPAPI{}
+)
 
 // Exports implements the modules.Instance interface's Exports
 func (r *TCPAPI) Exports() modules.Exports {
 	// r.blobConstructor = r.vu.Runtime().ToValue(r.blob)
 	return modules.Exports{
 		Named: map[string]interface{}{
-			"TCP": r.tcp,
+			"TCP": r.init,
 			// "Blob": r.blobConstructor,
 		},
 	}
@@ -58,18 +71,22 @@ type tcp struct {
 	eventListeners *eventListeners
 }
 
-func (r *TCPAPI) tcp(c sobek.ConstructorCall) *sobek.Object {
+var _ Thing = &tcp{}
+
+func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
+	t := &tcp{}
 	rt := r.vu.Runtime()
 
-	url, err := parseURL(c.Argument(0))
+	// TODO you can mutate url in this function and there is no need to return the value
+	err := t.parseURL(c.Argument(0))
 	if err != nil {
 		common.Throw(rt, err)
 	}
 
-	t := &tcp{
+	t = &tcp{
 		vu: r.vu,
 
-		url: url,
+		url: t.url,
 		obj: rt.NewObject(),
 
 		done:         make(chan struct{}),
@@ -83,18 +100,19 @@ func (r *TCPAPI) tcp(c sobek.ConstructorCall) *sobek.Object {
 }
 
 // parseURL parses and validate the url from the first constructor calls argument or returns an error
-func parseURL(urlValue sobek.Value) (*url.URL, error) {
+func (t *tcp) parseURL(urlValue sobek.Value) error {
 	if urlValue == nil || sobek.IsUndefined(urlValue) {
-		return nil, errors.New("TCP requires a url")
+		return errors.New("TCP requires a url")
 	}
 
 	urlString := urlValue.String()
 	url, err := url.Parse(urlString)
 	if err != nil {
-		return nil, fmt.Errorf("TCP requires valid url, but got %q which resulted in %w", urlString, err)
+		return fmt.Errorf("TCP requires valid url, but got %q which resulted in %w", urlString, err)
 	}
 
-	return url, nil
+	t.url = url
+	return nil
 }
 
 // defineTCP is defining tcp object in javascrip runtime using sobek engine, so that if you write:
