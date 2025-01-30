@@ -65,7 +65,7 @@ type tcp struct {
 	obj *sobek.Object
 	// started time.Time
 
-	done         chan struct{}
+	doneCh       chan struct{}
 	writeQueueCh chan string
 
 	eventListeners *eventListeners
@@ -89,7 +89,7 @@ func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
 		url: t.url,
 		obj: rt.NewObject(),
 
-		done:         make(chan struct{}),
+		doneCh:       make(chan struct{}),
 		writeQueueCh: make(chan string),
 
 		eventListeners: newEventListeners(),
@@ -132,11 +132,44 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 		"write", rt.ToValue(t.writeAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 	must(rt, t.obj.DefineDataProperty(
 		"open", rt.ToValue(t.openAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+	must(rt, t.obj.DefineDataProperty(
+		"done", rt.ToValue(t.doneAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+}
+
+func (t *tcp) done() error {
+	// TODO write done function
+	// you should actually close the socket, but should you erase the all other properties?? do we need them after this?
+	// memory and garbage collecter issues should be handled here
+	fmt.Printf("close the socket")
+	return nil
+}
+
+func (t *tcp) doneAsync() *sobek.Promise {
+	enqCallback := t.vu.RegisterCallback()
+	p, resolve, reject := t.vu.Runtime().NewPromise()
+
+	go func() {
+		err := t.done()
+		enqCallback(func() error {
+			if err != nil {
+				if er := reject(err); er != nil {
+					return er
+				}
+			}
+			if er := resolve("success opening socket."); er != nil {
+				return er
+			}
+			return nil
+		})
+	}()
+
+	return p
 }
 
 func (t *tcp) open(url url.URL, params tcpParams) error {
 	// TODO write open function
 	// mayby we can now have the socket net.Conn on t struct?
+	// it's exactly like init function from TCPAPI
 	fmt.Printf("open tcp socket with url: %s and params: %s", url.String(), params)
 	return nil
 }
