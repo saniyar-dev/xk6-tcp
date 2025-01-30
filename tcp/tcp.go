@@ -10,20 +10,19 @@ import (
 	"go.k6.io/k6/js/modules"
 )
 
-type ClientModule interface {
-	define(*sobek.Runtime)
-}
-
+// RootModule for TCPAPI extension
 type RootModule struct{}
 
 var _ modules.Module = &RootModule{}
 
+// NewModuleInstance creates new module instance when called from k6 to return TCPAPI
 func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
 	return &TCPAPI{
 		vu: vu,
 	}
 }
 
+// TCPAPI struct implements the api which is used on k6 extension
 type TCPAPI struct {
 	vu modules.VU
 	// blobConstructor sobek.Value
