@@ -130,9 +130,42 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 		"addEventListener", rt.ToValue(t.addEventListener), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 	must(rt, t.obj.DefineDataProperty(
 		"write", rt.ToValue(t.writeAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+	must(rt, t.obj.DefineDataProperty(
+		"open", rt.ToValue(t.openAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+}
+
+func (t *tcp) open(url url.URL, params tcpParams) error {
+	// TODO write open function
+	// mayby we can now have the socket net.Conn on t struct?
+	fmt.Printf("open tcp socket with url: %s and params: %s", url.String(), params)
+	return nil
+}
+
+func (t *tcp) openAsync(url url.URL, params tcpParams) *sobek.Promise {
+	enqCallback := t.vu.RegisterCallback()
+	p, resolve, reject := t.vu.Runtime().NewPromise()
+
+	go func() {
+		err := t.open(url, params)
+		enqCallback(func() error {
+			if err != nil {
+				if er := reject(err); er != nil {
+					return er
+				}
+			}
+			if er := resolve("success opening socket."); er != nil {
+				return er
+			}
+			return nil
+		})
+	}()
+
+	return p
 }
 
 func (t *tcp) write(m string) error {
+	// TODO write write function
+	// mayby we can now have the socket net.Conn on t struct and use it here??
 	fmt.Printf("The message is %s", m)
 	return nil
 }
@@ -149,7 +182,7 @@ func (t *tcp) writeAsync(m string) *sobek.Promise {
 					return er
 				}
 			}
-			if er := resolve("success"); er != nil {
+			if er := resolve("success writing on socket"); er != nil {
 				return er
 			}
 			return nil
