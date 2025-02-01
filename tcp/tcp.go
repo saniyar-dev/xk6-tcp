@@ -3,12 +3,16 @@ package tcp
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
+	"time"
 
 	"github.com/grafana/sobek"
+	"github.com/mstoykov/k6-taskqueue-lib/taskqueue"
 	"github.com/saniyar-dev/xk6-tcp/tcp/events"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
+	"go.k6.io/k6/metrics"
 )
 
 // Thing interface is an interface which all the thing needs to implement this.
@@ -20,13 +24,13 @@ type Thing interface {
 type tcp struct {
 	vu modules.VU
 
-	url *url.URL
-	// conn           *net.Conn
-	// tagsAndMeta    *metrics.TagsAndMeta
-	// tq             *taskqueue.TaskQueue
-	// builtinMetrics *metrics.BuiltinMetrics
-	obj *sobek.Object
-	// started time.Time
+	url            *url.URL
+	conn           *net.Conn
+	tagsAndMeta    *metrics.TagsAndMeta
+	tq             *taskqueue.TaskQueue
+	builtinMetrics *metrics.BuiltinMetrics
+	obj            *sobek.Object
+	started        time.Time
 
 	doneCh       chan struct{}
 	writeQueueCh chan string

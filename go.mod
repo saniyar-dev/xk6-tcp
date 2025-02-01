@@ -4,6 +4,7 @@ go 1.23.5
 
 require (
 	github.com/grafana/sobek v0.0.0-20241024150027-d91f02b05e9b
+	github.com/mstoykov/k6-taskqueue-lib v0.1.2
 	go.k6.io/k6 v0.56.0
 )
 
@@ -12,6 +13,7 @@ require (
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/evanw/esbuild v0.21.2 // indirect
 	github.com/fatih/color v1.18.0 // indirect
+	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
@@ -23,8 +25,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mstoykov/atlas v0.0.0-20220811071828-388f114305dd // indirect
-	github.com/onsi/ginkgo v1.16.5 // indirect
-	github.com/onsi/gomega v1.33.0 // indirect
 	github.com/serenize/snaker v0.0.0-20201027110005-a7ad2135616e // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/afero v1.1.2 // indirect
@@ -45,4 +45,5 @@ require (
 	google.golang.org/grpc v1.67.1 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/guregu/null.v3 v3.3.0 // indirect
+	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 )
