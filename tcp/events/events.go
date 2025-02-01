@@ -1,3 +1,4 @@
+// Package events implements custom event listening on tcp
 package events
 
 const (

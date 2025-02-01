@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/grafana/sobek"
+	"github.com/saniyar-dev/xk6-tcp/tcp/events"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
 )
@@ -58,7 +59,7 @@ type tcp struct {
 	vu modules.VU
 
 	url *url.URL
-	// conn *net.Conn
+	// conn           *net.Conn
 	// tagsAndMeta    *metrics.TagsAndMeta
 	// tq             *taskqueue.TaskQueue
 	// builtinMetrics *metrics.BuiltinMetrics
@@ -133,13 +134,48 @@ func (t *tcp) parseURL(urlValue sobek.Value) error {
 func defineTCP(rt *sobek.Runtime, t *tcp) {
 	// TODO add more definition
 	must(rt, t.obj.DefineDataProperty(
-		"addEventListener", rt.ToValue(t.addEventListener), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+		"on", rt.ToValue(t.addEventListener), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 	must(rt, t.obj.DefineDataProperty(
 		"write", rt.ToValue(t.writeAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 	must(rt, t.obj.DefineDataProperty(
 		"open", rt.ToValue(t.openAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 	must(rt, t.obj.DefineDataProperty(
 		"done", rt.ToValue(t.doneAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+
+	setOn := func(property string, el *eventListener) {
+		if el == nil {
+			// this is generally should not happen, but we're being defensive
+			common.Throw(rt, fmt.Errorf("not supported on-handler '%s'", property))
+		}
+
+		must(rt, t.obj.DefineAccessorProperty(
+			property, rt.ToValue(func() sobek.Value {
+				return rt.ToValue(el.getOn)
+			}), rt.ToValue(func(call sobek.FunctionCall) sobek.Value {
+				arg := call.Argument(0)
+
+				// it's possible to unset handlers by setting them to null
+				if arg == nil || sobek.IsUndefined(arg) || sobek.IsNull(arg) {
+					el.setOn(nil)
+
+					return nil
+				}
+
+				fn, isFunc := sobek.AssertFunction(arg)
+				if !isFunc {
+					common.Throw(rt, fmt.Errorf("a value for '%s' should be callable", property))
+				}
+
+				el.setOn(func(v sobek.Value) (sobek.Value, error) { return fn(sobek.Undefined(), v) })
+
+				return nil
+			}), sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+	}
+
+	setOn("onopen", t.eventListeners.getType(events.OPEN))
+	setOn("ondata", t.eventListeners.getType(events.DATA))
+	setOn("onclose", t.eventListeners.getType(events.CLOSE))
+	setOn("onerror", t.eventListeners.getType(events.ERROR))
 }
 
 func (t *tcp) done() error {
