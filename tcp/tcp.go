@@ -11,48 +11,10 @@ import (
 	"go.k6.io/k6/js/modules"
 )
 
-// ExportedAPI interface is an interface which all exported api needs to implement this interface
-type ExportedAPI interface {
-	init(sobek.ConstructorCall) *sobek.Object
-}
-
 // Thing interface is an interface which all the thing needs to implement this.
 type Thing interface {
 	parseURL(sobek.Value) error
-}
-
-// RootModule for TCPAPI extension
-type RootModule struct{}
-
-var _ modules.Module = &RootModule{}
-
-// NewModuleInstance creates new module instance when called from k6 to return TCPAPI
-func (r *RootModule) NewModuleInstance(vu modules.VU) modules.Instance {
-	return &TCPAPI{
-		vu: vu,
-	}
-}
-
-// TCPAPI struct implements the api which is used on k6 extension
-type TCPAPI struct {
-	vu modules.VU
-	// blobConstructor sobek.Value
-}
-
-var (
-	_ modules.Instance = &TCPAPI{}
-	_ ExportedAPI      = &TCPAPI{}
-)
-
-// Exports implements the modules.Instance interface's Exports
-func (r *TCPAPI) Exports() modules.Exports {
-	// r.blobConstructor = r.vu.Runtime().ToValue(r.blob)
-	return modules.Exports{
-		Named: map[string]interface{}{
-			"TCP": r.init,
-			// "Blob": r.blobConstructor,
-		},
-	}
+	addEventListener(string, func(sobek.Value) (sobek.Value, error))
 }
 
 type tcp struct {
@@ -69,42 +31,10 @@ type tcp struct {
 	doneCh       chan struct{}
 	writeQueueCh chan string
 
-	eventListeners *eventListeners
+	eventListeners *events.EventListeners
 }
 
 var _ Thing = &tcp{}
-
-func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
-	t := &tcp{}
-	rt := r.vu.Runtime()
-
-	t = &tcp{
-		vu: r.vu,
-
-		url: t.url,
-		obj: rt.NewObject(),
-
-		doneCh:       make(chan struct{}),
-		writeQueueCh: make(chan string),
-
-		eventListeners: newEventListeners(),
-	}
-	defineTCP(rt, t)
-
-	// In this way the difference between having arguments in new TCP object and socket.open is doing it async or sync
-	if len(c.Arguments) > 0 {
-		err := t.parseURL(c.Argument(0))
-		if err != nil {
-			common.Throw(rt, err)
-		}
-
-		if err := t.open(*t.url, tcpParams{}); err != nil {
-			common.Throw(rt, err)
-		}
-	}
-
-	return t.obj
-}
 
 // parseURL parses and validate the url from the first constructor calls argument or returns an error
 func (t *tcp) parseURL(urlValue sobek.Value) error {
@@ -142,7 +72,7 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 	must(rt, t.obj.DefineDataProperty(
 		"done", rt.ToValue(t.doneAsync), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 
-	setOn := func(property string, el *eventListener) {
+	setOn := func(property string, el *events.EventListener) {
 		if el == nil {
 			// this is generally should not happen, but we're being defensive
 			common.Throw(rt, fmt.Errorf("not supported on-handler '%s'", property))
@@ -150,13 +80,13 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 
 		must(rt, t.obj.DefineAccessorProperty(
 			property, rt.ToValue(func() sobek.Value {
-				return rt.ToValue(el.getOn)
+				return rt.ToValue(el.GetOn)
 			}), rt.ToValue(func(call sobek.FunctionCall) sobek.Value {
 				arg := call.Argument(0)
 
 				// it's possible to unset handlers by setting them to null
 				if arg == nil || sobek.IsUndefined(arg) || sobek.IsNull(arg) {
-					el.setOn(nil)
+					el.SetOn(nil)
 
 					return nil
 				}
@@ -166,16 +96,16 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 					common.Throw(rt, fmt.Errorf("a value for '%s' should be callable", property))
 				}
 
-				el.setOn(func(v sobek.Value) (sobek.Value, error) { return fn(sobek.Undefined(), v) })
+				el.SetOn(func(v sobek.Value) (sobek.Value, error) { return fn(sobek.Undefined(), v) })
 
 				return nil
 			}), sobek.FLAG_FALSE, sobek.FLAG_TRUE))
 	}
 
-	setOn("onopen", t.eventListeners.getType(events.OPEN))
-	setOn("ondata", t.eventListeners.getType(events.DATA))
-	setOn("onclose", t.eventListeners.getType(events.CLOSE))
-	setOn("onerror", t.eventListeners.getType(events.ERROR))
+	setOn("onopen", t.eventListeners.GetType(events.OPEN))
+	setOn("ondata", t.eventListeners.GetType(events.DATA))
+	setOn("onclose", t.eventListeners.GetType(events.CLOSE))
+	setOn("onerror", t.eventListeners.GetType(events.ERROR))
 }
 
 func (t *tcp) done() error {
@@ -275,7 +205,7 @@ func (t *tcp) addEventListener(event string, handler func(sobek.Value) (sobek.Va
 		common.Throw(t.vu.Runtime(), fmt.Errorf("handler for event type %q isn't a callable function", event))
 	}
 
-	if err := t.eventListeners.add(event, handler); err != nil {
+	if err := t.eventListeners.Add(event, handler); err != nil {
 		t.vu.State().Logger.Warnf("can't add event handler: %s", err)
 	}
 }
