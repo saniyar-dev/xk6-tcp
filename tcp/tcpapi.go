@@ -65,7 +65,7 @@ func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
 			common.Throw(rt, err)
 		}
 
-		if err := t.open(*t.url, tcpParams{}); err != nil {
+		if err := t.open(t.url, tcpParams{}); err != nil {
 			common.Throw(rt, err)
 		}
 	}

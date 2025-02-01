@@ -1,18 +1,14 @@
 package tcp
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
-	"time"
 
 	"github.com/grafana/sobek"
-	"github.com/mstoykov/k6-taskqueue-lib/taskqueue"
 	"github.com/saniyar-dev/xk6-tcp/tcp/events"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
-	"go.k6.io/k6/metrics"
 )
 
 // Thing interface is an interface which all the thing needs to implement this.
@@ -24,13 +20,13 @@ type Thing interface {
 type tcp struct {
 	vu modules.VU
 
-	url            *url.URL
-	conn           *net.Conn
-	tagsAndMeta    *metrics.TagsAndMeta
-	tq             *taskqueue.TaskQueue
-	builtinMetrics *metrics.BuiltinMetrics
-	obj            *sobek.Object
-	started        time.Time
+	url  string
+	conn net.Conn
+	// tagsAndMeta    *metrics.TagsAndMeta
+	// tq             *taskqueue.TaskQueue
+	// builtinMetrics *metrics.BuiltinMetrics
+	obj *sobek.Object
+	// started time.Time
 
 	doneCh       chan struct{}
 	writeQueueCh chan string
@@ -42,17 +38,19 @@ var _ Thing = &tcp{}
 
 // parseURL parses and validate the url from the first constructor calls argument or returns an error
 func (t *tcp) parseURL(urlValue sobek.Value) error {
-	if urlValue == nil || sobek.IsUndefined(urlValue) {
-		return errors.New("TCP requires a url")
+	addr := urlValue.String()
+	u, err := url.Parse(addr)
+	if err == nil && u.Host != "" {
+		// Use the host from URL (includes port if specified)
+		addr = u.Host
 	}
 
-	urlString := urlValue.String()
-	url, err := url.Parse(urlString)
+	// Split into host:port components
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("TCP requires valid url, but got %q which resulted in %w", urlString, err)
+		return fmt.Errorf("TCP requires valid url, but got %q which resulted in %w", addr, err)
 	}
-
-	t.url = url
+	t.url = net.JoinHostPort(host, port)
 	return nil
 }
 
@@ -116,6 +114,10 @@ func (t *tcp) done() error {
 	// TODO write done function
 	// you should actually close the socket, but should you erase the all other properties?? do we need them after this?
 	// memory and garbage collecter issues should be handled here
+
+	if err := t.conn.Close(); err != nil {
+		return err
+	}
 	fmt.Printf("close the socket")
 	return nil
 }
@@ -142,15 +144,28 @@ func (t *tcp) doneAsync() *sobek.Promise {
 	return p
 }
 
-func (t *tcp) open(url url.URL, params tcpParams) error {
+func (t *tcp) open(url string, params tcpParams) error {
 	// TODO write open function
 	// mayby we can now have the socket net.Conn on t struct?
 	// it's exactly like init function from TCPAPI
-	fmt.Printf("open tcp socket with url: %s and params: %s", url.String(), params)
+	ctx := t.vu.Context()
+	td := &net.Dialer{}
+
+	conn, connErr := td.DialContext(ctx, "tcp", url)
+	if connErr != nil {
+		return connErr
+	}
+	t.conn = conn
+
+	if connErr != nil {
+		return connErr
+	}
+
+	fmt.Printf("open tcp socket with url: %s and params: %s", url, params)
 	return nil
 }
 
-func (t *tcp) openAsync(url url.URL, params tcpParams) *sobek.Promise {
+func (t *tcp) openAsync(url string, params tcpParams) *sobek.Promise {
 	enqCallback := t.vu.RegisterCallback()
 	p, resolve, reject := t.vu.Runtime().NewPromise()
 
@@ -175,6 +190,14 @@ func (t *tcp) openAsync(url url.URL, params tcpParams) *sobek.Promise {
 func (t *tcp) write(m string) error {
 	// TODO write write function
 	// mayby we can now have the socket net.Conn on t struct and use it here??
+	b, err := common.ToBytes(m)
+	if err != nil {
+		return err
+	}
+	_, err = t.conn.Write(b)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("The message is %s", m)
 	return nil
 }
