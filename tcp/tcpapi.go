@@ -25,10 +25,7 @@ type TCPAPI struct {
 	// blobConstructor sobek.Value
 }
 
-var (
-	_ modules.Instance = &TCPAPI{}
-	_ ExportedAPI      = &TCPAPI{}
-)
+var _ ExportedAPI = &TCPAPI{}
 
 // Exports implements the modules.Instance interface's Exports
 func (r *TCPAPI) Exports() modules.Exports {
