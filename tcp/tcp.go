@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"time"
 
 	"github.com/grafana/sobek"
+	"github.com/mstoykov/k6-taskqueue-lib/taskqueue"
 	"github.com/saniyar-dev/xk6-tcp/tcp/events"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
@@ -15,7 +17,22 @@ import (
 type Thing interface {
 	parseURL(sobek.Value) error
 	addEventListener(string, func(sobek.Value) (sobek.Value, error))
+	newEvent(string, time.Time) *sobek.Object
 }
+
+// ReadyState is tcp socket specification's readystate
+type ReadyState uint8
+
+const (
+	// CONNECTING is the state while the tcp socket is connecting
+	CONNECTING ReadyState = iota
+	// OPEN is the state after the tcp socket is established and before it starts closing
+	OPEN
+	// CLOSING is while the tcp socket is closing but is *not* closed yet
+	CLOSING
+	// CLOSED is when the tcp socket is finally closed
+	CLOSED
+)
 
 type tcp struct {
 	vu modules.VU
@@ -23,7 +40,7 @@ type tcp struct {
 	url  string
 	conn net.Conn
 	// tagsAndMeta    *metrics.TagsAndMeta
-	// tq             *taskqueue.TaskQueue
+	tq *taskqueue.TaskQueue
 	// builtinMetrics *metrics.BuiltinMetrics
 	obj *sobek.Object
 	// started time.Time
@@ -32,6 +49,8 @@ type tcp struct {
 	writeQueueCh chan string
 
 	eventListeners *events.EventListeners
+
+	readyState ReadyState
 }
 
 var _ Thing = &tcp{}
@@ -110,6 +129,32 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 	setOn("onerror", t.eventListeners.GetType(events.ERROR))
 }
 
+func (t *tcp) loop() {
+}
+
+func (t *tcp) connectionConnected() error {
+	if t.readyState != CONNECTING {
+		return nil
+	}
+	t.readyState = OPEN
+	return t.callOpenListeneres(time.Now())
+}
+
+func (t *tcp) connectionClosedWithError(err error) error {
+	if t.readyState == CLOSED {
+		return nil
+	}
+	t.readyState = CLOSED
+	// close(t.done)
+
+	if err != nil {
+		if errList := t.callErrorListeners(err, time.Now()); errList != nil {
+			return errList // TODO ... still call the close listeners ?!?
+		}
+	}
+	return t.callEventListeners(events.CLOSE, time.Now())
+}
+
 func (t *tcp) done() error {
 	// TODO write done function
 	// you should actually close the socket, but should you erase the all other properties?? do we need them after this?
@@ -160,6 +205,11 @@ func (t *tcp) open(url string, params tcpParams) error {
 	if connErr != nil {
 		return connErr
 	}
+
+	go t.loop()
+	t.tq.Queue(func() error {
+		return t.connectionConnected()
+	})
 
 	fmt.Printf("open tcp socket with url: %s and params: %s", url, params)
 	return nil
@@ -222,6 +272,68 @@ func (t *tcp) writeAsync(m string) *sobek.Promise {
 	}()
 
 	return p
+}
+
+func (t *tcp) callErrorListeners(e error, timestamp time.Time) error {
+	rt := t.vu.Runtime()
+
+	ev := t.newEvent(events.ERROR, timestamp)
+	must(rt, ev.DefineDataProperty("error",
+		rt.ToValue(e.Error()),
+		sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+	for _, errorListener := range t.eventListeners.All(events.ERROR) {
+		if _, err := errorListener(ev); err != nil { // TODO fix timestamp
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *tcp) callOpenListeneres(timestamp time.Time) error {
+	for _, openListener := range t.eventListeners.All(events.OPEN) {
+		if _, err := openListener(t.newEvent(events.OPEN, timestamp)); err != nil {
+			_ = t.conn.Close()                   // TODO log it?
+			_ = t.connectionClosedWithError(err) // TODO log it?
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *tcp) callEventListeners(evType string, timestamp time.Time) error {
+	for _, listener := range t.eventListeners.All(evType) {
+		if _, err := listener(t.newEvent(evType, timestamp)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *tcp) newEvent(eventType string, timestamp time.Time) *sobek.Object {
+	rt := t.vu.Runtime()
+	o := rt.NewObject()
+
+	must(rt, o.DefineAccessorProperty("type", rt.ToValue(func() string {
+		return eventType
+	}), nil, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+	must(rt, o.DefineAccessorProperty("target", rt.ToValue(func() interface{} {
+		return t.obj
+	}), nil, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+	// skip srcElement
+	// skip currentTarget ??!!
+	// skip eventPhase ??!!
+	// skip stopPropagation
+	// skip cancelBubble
+	// skip stopImmediatePropagation
+	// skip a bunch more
+
+	must(rt, o.DefineAccessorProperty("timestamp", rt.ToValue(func() float64 {
+		return float64(timestamp.UnixNano()) / 1_000_000 // milliseconds as double as per the spec
+		// https://w3c.github.io/hr-time/#dom-domhighrestimestamp
+	}), nil, sobek.FLAG_FALSE, sobek.FLAG_TRUE))
+
+	return o
 }
 
 // addEventListener adds event listeners on your tcp struct
