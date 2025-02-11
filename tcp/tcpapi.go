@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"github.com/grafana/sobek"
+	"github.com/mstoykov/k6-taskqueue-lib/taskqueue"
 	"github.com/saniyar-dev/xk6-tcp/tcp/events"
 	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
@@ -47,6 +48,7 @@ func (r *TCPAPI) init(c sobek.ConstructorCall) *sobek.Object {
 
 		url: t.url,
 		obj: rt.NewObject(),
+		tq:  taskqueue.New(r.vu.RegisterCallback),
 
 		doneCh:       make(chan struct{}),
 		writeQueueCh: make(chan string),
