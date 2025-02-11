@@ -129,7 +129,57 @@ func defineTCP(rt *sobek.Runtime, t *tcp) {
 	setOn("onerror", t.eventListeners.GetType(events.ERROR))
 }
 
+type message struct {
+	data      []byte
+	timestamp time.Time
+}
+
+func (t *tcp) queueMessage(message *message) {
+	t.tq.Queue(func() error {
+		if t.readyState != OPEN {
+			return nil
+		}
+
+		rt := t.vu.Runtime()
+		ev := t.newEvent(events.DATA, message.timestamp)
+		must(
+			rt,
+			ev.DefineDataProperty("data", rt.ToValue(string(message.data)), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE),
+		)
+		must(
+			rt,
+			ev.DefineDataProperty("origin", rt.ToValue(t.url), sobek.FLAG_FALSE, sobek.FLAG_FALSE, sobek.FLAG_TRUE),
+		)
+
+		for _, dataListener := range t.eventListeners.All(events.DATA) {
+			if _, err := dataListener(ev); err != nil {
+				_ = t.conn.Close()                   // TODO log it?
+				_ = t.connectionClosedWithError(err) // TODO log it?
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (t *tcp) loop() {
+	for {
+		b := make([]byte, 1024)
+		_, err := t.conn.Read(b)
+		if err == nil {
+			t.queueMessage(&message{
+				data:      b,
+				timestamp: time.Now(),
+			})
+			continue
+		}
+
+		t.tq.Queue(func() error {
+			_ = t.conn.Close()
+			_ = t.connectionClosedWithError(err)
+			return nil
+		})
+	}
 }
 
 func (t *tcp) connectionConnected() error {
